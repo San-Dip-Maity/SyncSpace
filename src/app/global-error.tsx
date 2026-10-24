@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 
 export default function GlobalError({
   reset,
@@ -11,6 +10,10 @@ export default function GlobalError({
 }) {
   return (
     <html lang="en">
+      <head>
+        <title>SyncSpace Error</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </head>
       <body className="min-h-screen flex items-center justify-center bg-slate-900 text-slate-100 p-4 font-sans antialiased">
         <div className="max-w-md w-full bg-slate-800 border border-slate-700 p-8 rounded-xl shadow-2xl text-center space-y-5">
           <div className="h-12 w-12 rounded-full bg-red-500/20 text-red-400 mx-auto flex items-center justify-center font-bold text-xl">
@@ -29,12 +32,12 @@ export default function GlobalError({
             >
               Try Again
             </button>
-            <Link
+            <a
               href="/"
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold transition"
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold transition cursor-pointer"
             >
               Back to Home
-            </Link>
+            </a>
           </div>
         </div>
       </body>

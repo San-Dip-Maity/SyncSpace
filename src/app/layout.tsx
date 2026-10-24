@@ -7,15 +7,8 @@ export const metadata: Metadata = {
   title: "SyncSpace — Real-Time Collaborative Document Platform",
   description:
     "A production-grade collaborative workspace platform for modern engineering and product teams. Real-time CRDT editing, presence, version recovery, and access controls.",
-  keywords: [
-    "collaboration",
-    "real-time editor",
-    "CRDT",
-    "Yjs",
-    "Notion alternative",
-    "markdown documents",
-    "team workspace",
-  ],
+  keywords:
+    "collaboration, real-time editor, CRDT, Yjs, Notion alternative, markdown documents, team workspace",
   authors: [{ name: "SyncSpace Engineering Team" }],
 };
 
