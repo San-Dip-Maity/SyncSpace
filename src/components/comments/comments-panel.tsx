@@ -119,7 +119,7 @@ export function CommentsPanel({
 
   const handleToggleResolved = async (commentId: string, currentResolved: boolean) => {
     try {
-      const res = await fetch(`/api/documents/${documentId}/comments`, {
+      const res = await fetch(`/api/documents/${documentId}/comments${shareToken ? `?shareToken=${shareToken}` : ""}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ commentId, isResolved: !currentResolved }),
@@ -135,7 +135,7 @@ export function CommentsPanel({
 
   const handleDeleteComment = async (commentId: string) => {
     try {
-      const res = await fetch(`/api/documents/${documentId}/comments?commentId=${commentId}`, {
+      const res = await fetch(`/api/documents/${documentId}/comments?commentId=${commentId}${shareToken ? `&shareToken=${shareToken}` : ""}`, {
         method: "DELETE",
       });
 
@@ -149,6 +149,7 @@ export function CommentsPanel({
 
   if (!isOpen) return null;
 
+  const isGuest = !currentUserId || currentUserId === "anonymous-guest";
   const openComments = comments.filter((c) => !c.isResolved);
   const resolvedComments = comments.filter((c) => c.isResolved);
   const displayed = tab === "open" ? openComments : resolvedComments;
@@ -194,20 +195,34 @@ export function CommentsPanel({
 
       {/* New Comment Input Box */}
       <div className="p-3 border-b border-border bg-muted/15">
-        <form onSubmit={handleCreateComment} className="space-y-2">
-          <textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Add a comment or discussion thread..."
-            className="w-full h-20 text-xs p-2.5 rounded-md border border-border bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-          />
-          <div className="flex justify-end">
-            <Button type="submit" size="sm" disabled={isLoading || !newComment.trim()} className="gap-1.5 text-xs">
-              <Send className="h-3 w-3" />
-              <span>Comment</span>
-            </Button>
+        {isGuest ? (
+          <div className="rounded-md border border-border bg-background/50 p-2.5 text-center space-y-2">
+            <p className="text-xs text-muted-foreground">You are viewing discussions as a guest.</p>
+            <a
+              href={`/sign-in?callbackUrl=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname : "")}`}
+              className="inline-block w-full"
+            >
+              <Button variant="outline" size="sm" className="w-full text-xs h-7">
+                Sign In to Post Comments
+              </Button>
+            </a>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleCreateComment} className="space-y-2">
+            <textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add a comment or discussion thread..."
+              className="w-full h-20 text-xs p-2.5 rounded-md border border-border bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            />
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" disabled={isLoading || !newComment.trim()} className="gap-1.5 text-xs">
+                <Send className="h-3 w-3" />
+                <span>Comment</span>
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Comments List */}

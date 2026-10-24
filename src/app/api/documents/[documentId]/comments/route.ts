@@ -113,7 +113,10 @@ export async function PATCH(
   }
 
   const { documentId } = await params;
-  const canComment = await canCommentDocument(user.id, documentId);
+  const { searchParams } = new URL(req.url);
+  const shareToken = searchParams.get("shareToken");
+
+  const canComment = await canCommentDocument(user.id, documentId, shareToken);
   if (!canComment) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }

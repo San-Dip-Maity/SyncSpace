@@ -46,6 +46,7 @@ export interface CollaborativeEditorProps {
     avatarUrl?: string | null;
   };
   shareToken?: string | null;
+  collabToken?: string | null;
   onStatusChange?: (status: "synced" | "syncing" | "saved" | "offline") => void;
   onCollaboratorsChange?: (collaborators: CollaboratorUser[]) => void;
 }
@@ -56,6 +57,7 @@ export function CollaborativeEditor({
   readOnly = false,
   currentUser,
   shareToken,
+  collabToken,
   onStatusChange,
   onCollaboratorsChange,
 }: CollaborativeEditorProps) {
@@ -72,8 +74,12 @@ export function CollaborativeEditor({
     const wsUrl = process.env.NEXT_PUBLIC_COLLAB_WS_URL || "ws://localhost:3001";
 
     try {
+      const params: Record<string, string> = {};
+      if (shareToken) params.shareToken = shareToken;
+      if (collabToken) params.token = collabToken;
+
       wsProvider = new WebsocketProvider(wsUrl, documentId, ydoc, {
-        params: shareToken ? { shareToken } : {},
+        params,
       });
 
       // Set user awareness state
@@ -101,7 +107,8 @@ export function CollaborativeEditor({
 
       // Track active collaborators in room
       const handleAwarenessChange = () => {
-        const states = wsProvider!.awareness.getStates();
+        if (!wsProvider) return;
+        const states = wsProvider.awareness.getStates();
         const collaborators: CollaboratorUser[] = [];
 
         states.forEach((state, clientId) => {
@@ -119,6 +126,7 @@ export function CollaborativeEditor({
       };
 
       wsProvider.awareness.on("change", handleAwarenessChange);
+      handleAwarenessChange();
       setProvider(wsProvider);
     } catch (err) {
       console.warn("Realtime WebSocket provider unavailable, operating in local sync mode:", err);
@@ -131,7 +139,7 @@ export function CollaborativeEditor({
       }
       ydoc.destroy();
     };
-  }, [documentId, ydoc, currentUser, userColor, shareToken, onStatusChange, onCollaboratorsChange]);
+  }, [documentId, ydoc, currentUser, userColor, shareToken, collabToken, onStatusChange, onCollaboratorsChange]);
 
   // Autosave to REST endpoint as fallback and for search/preview hydration
   const handleContentUpdate = React.useCallback(

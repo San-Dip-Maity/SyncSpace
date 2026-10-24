@@ -52,6 +52,7 @@ export default function DocumentEditorPage() {
 
   const [document, setDocument] = React.useState<DocumentData | null>(null);
   const [currentUser, setCurrentUser] = React.useState<{ id: string; name: string; email: string; avatarUrl?: string | null } | null>(null);
+  const [collabToken, setCollabToken] = React.useState<string | null>(null);
   const [title, setTitle] = React.useState("");
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [syncStatus, setSyncStatus] = React.useState<"synced" | "syncing" | "saved" | "offline">("syncing");
@@ -76,6 +77,7 @@ export default function DocumentEditorPage() {
         setDocument(docData.document);
         setTitle(docData.document.title);
         setCurrentUser(userData.user);
+        setCollabToken(userData.token || null);
       } else if (docRes.status === 403 || docRes.status === 404) {
         router.push(`/workspace/${workspaceId}/documents`);
       }
@@ -339,6 +341,7 @@ export default function DocumentEditorPage() {
             initialContentHtml={document.contentHtml || "<p></p>"}
             readOnly={isReadOnly}
             currentUser={currentUser}
+            collabToken={collabToken}
             onStatusChange={setSyncStatus}
             onCollaboratorsChange={setCollaborators}
           />
