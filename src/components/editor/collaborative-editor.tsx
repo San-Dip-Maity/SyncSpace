@@ -81,7 +81,23 @@ export function CollaborativeEditor({
   // Initialize Yjs WebSocket Provider only when connection parameters change
   React.useEffect(() => {
     let wsProvider: WebsocketProvider | null = null;
-    const wsUrl = process.env.NEXT_PUBLIC_COLLAB_WS_URL || "ws://localhost:3001";
+    let wsUrl = process.env.NEXT_PUBLIC_COLLAB_WS_URL;
+    if (!wsUrl || wsUrl.includes("localhost")) {
+      if (typeof window !== "undefined") {
+        if (window.location.hostname.includes("onrender.com")) {
+          const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+          wsUrl = `${protocol}//${window.location.host}`;
+        } else if (
+          window.location.hostname.includes("vercel.app") ||
+          (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1")
+        ) {
+          wsUrl = "wss://syncspace-7s7s.onrender.com";
+        }
+      }
+    }
+    if (!wsUrl) {
+      wsUrl = "ws://localhost:3001";
+    }
 
     try {
       const params: Record<string, string> = {};

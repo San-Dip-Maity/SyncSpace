@@ -10,10 +10,12 @@ import prisma from "../lib/db/prisma";
 import { getDocumentAccess } from "../lib/security/policies";
 import { DocumentRole } from "@prisma/client";
 
-const PORT = parseInt(process.env.COLLAB_PORT || "3001", 10);
-const AUTH_SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "syncspace-super-secure-local-dev-jwt-secret-key-32-chars-long"
-);
+const PORT = parseInt(process.env.PORT || process.env.COLLAB_PORT || "3001", 10);
+const ACCEPTED_SECRETS = [
+  process.env.AUTH_SECRET,
+  "syncspace-super-secure-production-secret-key-32-chars-min",
+  "syncspace-super-secure-local-dev-jwt-secret-key-32-chars-long",
+].filter(Boolean) as string[];
 
 const messageSync = 0;
 const messageAwareness = 1;
@@ -183,132 +185,142 @@ async function authenticateRequest(req: IncomingMessage): Promise<{
   let name = "Anonymous Guest";
 
   if (token) {
-    try {
-      const { payload } = await jwtVerify(token, AUTH_SECRET);
-      if (payload.userId && typeof payload.userId === "string") {
-        userId = payload.userId;
-        name = (payload.name as string) || "Collaborator";
+    for (const secretStr of ACCEPTED_SECRETS) {
+      try {
+        const { payload } = await jwtVerify(token, new TextEncoder().encode(secretStr));
+        if (payload.userId && typeof payload.userId === "string") {
+          userId = payload.userId;
+          name = (payload.name as string) || "Collaborator";
+          break;
+        }
+      } catch {
+        // Try next secret candidate
       }
-    } catch {
-      // Invalid JWT token
     }
   }
 
   return { userId, name, docId, shareToken };
 }
 
-const wss = new WebSocketServer({ port: PORT });
+export function setupCollabServer(wss: WebSocketServer): WebSocketServer {
+  wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
+    const { userId, name, docId, shareToken } = await authenticateRequest(req);
 
-console.log(`[CollabServer] SyncSpace Real-Time Collaboration WebSocket Server running on ws://localhost:${PORT}`);
+    if (!docId) {
+      ws.close(1008, "Missing document ID");
+      return;
+    }
 
-wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
-  const { userId, name, docId, shareToken } = await authenticateRequest(req);
+    // Authorize document access via domain policies
+    const access = await getDocumentAccess(userId, docId, shareToken);
+    if (!access.allowed || !access.role) {
+      console.warn(`[CollabServer] Access denied to doc ${docId} for user ${userId || "guest"}`);
+      ws.close(1008, "Access Denied");
+      return;
+    }
 
-  if (!docId) {
-    ws.close(1008, "Missing document ID");
-    return;
-  }
+    const isReadOnly = access.role === DocumentRole.VIEWER;
+    const room = await getOrCreateRoom(docId);
 
-  // Authorize document access via domain policies
-  const access = await getDocumentAccess(userId, docId, shareToken);
-  if (!access.allowed || !access.role) {
-    console.warn(`[CollabServer] Access denied to doc ${docId} for user ${userId || "guest"}`);
-    ws.close(1008, "Access Denied");
-    return;
-  }
+    room.clients.set(ws, {
+      ws,
+      userId,
+      name,
+      role: access.role,
+      isReadOnly,
+    });
 
-  const isReadOnly = access.role === DocumentRole.VIEWER;
-  const room = await getOrCreateRoom(docId);
+    console.log(`[CollabServer] Client joined room ${docId} (${name}, Role: ${access.role})`);
 
-  room.clients.set(ws, {
-    ws,
-    userId,
-    name,
-    role: access.role,
-    isReadOnly,
-  });
+    // 1. Send initial SyncStep 1
+    const syncEncoder = encoding.createEncoder();
+    encoding.writeVarUint(syncEncoder, messageSync);
+    syncProtocol.writeSyncStep1(syncEncoder, room.ydoc);
+    ws.send(encoding.toUint8Array(syncEncoder));
 
-  console.log(`[CollabServer] Client joined room ${docId} (${name}, Role: ${access.role})`);
+    // 2. Send current awareness states
+    const awarenessStates = room.awareness.getStates();
+    if (awarenessStates.size > 0) {
+      const awarenessEncoder = encoding.createEncoder();
+      encoding.writeVarUint(awarenessEncoder, messageAwareness);
+      encoding.writeVarUint8Array(
+        awarenessEncoder,
+        awarenessProtocol.encodeAwarenessUpdate(
+          room.awareness,
+          Array.from(awarenessStates.keys())
+        )
+      );
+      ws.send(encoding.toUint8Array(awarenessEncoder));
+    }
 
-  // 1. Send initial SyncStep 1
-  const syncEncoder = encoding.createEncoder();
-  encoding.writeVarUint(syncEncoder, messageSync);
-  syncProtocol.writeSyncStep1(syncEncoder, room.ydoc);
-  ws.send(encoding.toUint8Array(syncEncoder));
+    // Handle incoming messages
+    ws.on("message", (data: ArrayBuffer) => {
+      try {
+        const uint8 = new Uint8Array(data);
+        const decoder = decoding.createDecoder(uint8);
+        const messageType = decoding.readVarUint(decoder);
 
-  // 2. Send current awareness states
-  const awarenessStates = room.awareness.getStates();
-  if (awarenessStates.size > 0) {
-    const awarenessEncoder = encoding.createEncoder();
-    encoding.writeVarUint(awarenessEncoder, messageAwareness);
-    encoding.writeVarUint8Array(
-      awarenessEncoder,
-      awarenessProtocol.encodeAwarenessUpdate(
-        room.awareness,
-        Array.from(awarenessStates.keys())
-      )
-    );
-    ws.send(encoding.toUint8Array(awarenessEncoder));
-  }
+        switch (messageType) {
+          case messageSync: {
+            const clientMeta = room.clients.get(ws);
+            if (clientMeta?.isReadOnly) {
+              // Read-only viewers cannot submit edits
+              return;
+            }
 
-  // Handle incoming messages
-  ws.on("message", (data: ArrayBuffer) => {
-    try {
-      const uint8 = new Uint8Array(data);
-      const decoder = decoding.createDecoder(uint8);
-      const messageType = decoding.readVarUint(decoder);
+            const syncEncoder = encoding.createEncoder();
+            encoding.writeVarUint(syncEncoder, messageSync);
+            syncProtocol.readSyncMessage(decoder, syncEncoder, room.ydoc, ws);
 
-      switch (messageType) {
-        case messageSync: {
-          const clientMeta = room.clients.get(ws);
-          if (clientMeta?.isReadOnly) {
-            // Read-only viewers cannot submit edits
-            return;
+            if (encoding.length(syncEncoder) > 1) {
+              ws.send(encoding.toUint8Array(syncEncoder));
+            }
+            break;
           }
 
-          const syncEncoder = encoding.createEncoder();
-          encoding.writeVarUint(syncEncoder, messageSync);
-          syncProtocol.readSyncMessage(decoder, syncEncoder, room.ydoc, ws);
-
-          if (encoding.length(syncEncoder) > 1) {
-            ws.send(encoding.toUint8Array(syncEncoder));
+          case messageAwareness: {
+            awarenessProtocol.applyAwarenessUpdate(
+              room.awareness,
+              decoding.readVarUint8Array(decoder),
+              ws
+            );
+            break;
           }
-          break;
         }
-
-        case messageAwareness: {
-          awarenessProtocol.applyAwarenessUpdate(
-            room.awareness,
-            decoding.readVarUint8Array(decoder),
-            ws
-          );
-          break;
-        }
+      } catch (err) {
+        console.error(`[CollabServer] Error processing message in room ${docId}:`, err);
       }
-    } catch (err) {
-      console.error(`[CollabServer] Error processing message in room ${docId}:`, err);
-    }
+    });
+
+    const handleDisconnect = () => {
+      room.clients.delete(ws);
+      awarenessProtocol.removeAwarenessStates(
+        room.awareness,
+        [room.ydoc.clientID],
+        null
+      );
+      console.log(`[CollabServer] Client disconnected from ${docId}. Remaining: ${room.clients.size}`);
+
+      // If room is empty, persist any pending state
+      if (room.clients.size === 0) {
+        setTimeout(() => {
+          if (room.clients.size === 0) {
+            compactRoomUpdates(docId, room.ydoc).catch(console.error);
+          }
+        }, 5000);
+      }
+    };
+
+    ws.on("close", handleDisconnect);
+    ws.on("error", handleDisconnect);
   });
 
-  const handleDisconnect = () => {
-    room.clients.delete(ws);
-    awarenessProtocol.removeAwarenessStates(
-      room.awareness,
-      [room.ydoc.clientID],
-      null
-    );
-    console.log(`[CollabServer] Client disconnected from ${docId}. Remaining: ${room.clients.size}`);
+  return wss;
+}
 
-    // If room is empty, persist any pending state
-    if (room.clients.size === 0) {
-      setTimeout(() => {
-        if (room.clients.size === 0) {
-          compactRoomUpdates(docId, room.ydoc).catch(console.error);
-        }
-      }, 5000);
-    }
-  };
-
-  ws.on("close", handleDisconnect);
-  ws.on("error", handleDisconnect);
-});
+// Standalone execution for npm run collab:server
+if (process.argv[1]?.includes("collab-server") || process.env.STANDALONE_COLLAB === "true") {
+  const wss = new WebSocketServer({ port: PORT });
+  setupCollabServer(wss);
+  console.log(`[CollabServer] Standalone Yjs WebSocket Server running on port ${PORT}`);
+}
