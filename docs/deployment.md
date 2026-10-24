@@ -111,15 +111,19 @@ Because Vercel serverless functions have execution time limits and cannot mainta
 3. Import your `SyncSpace` repository.
 4. Configure Project Settings:
    - **Framework Preset:** `Next.js`
-   - **Build Command:** `npm run build`
+   - **Build Command:** `prisma generate && next build`
    - **Output Directory:** `.next`
-   - **Install Command:** `npm ci --legacy-peer-deps`
+   - **Install Command:** `npm install --legacy-peer-deps`
 5. Configure Environment Variables in the Vercel dashboard:
-   - `DATABASE_URL`: `postgresql://user:pass@ep-pooler.neon.tech/neondb?sslmode=require`
-   - `AUTH_SECRET`: (Generated 32-byte hex string)
-   - `NEXT_PUBLIC_APP_URL`: `https://syncspace.vercel.app` (or your custom domain)
-   - `NEXT_PUBLIC_COLLAB_WS_URL`: `wss://syncspace-collab.onrender.com`
+   - `DATABASE_URL`: `postgresql://neondb_owner:...@ep-super-union-b47buhvu-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
+   - `AUTH_SECRET`: Your 32+ byte auth secret key
+   - `NEXT_PUBLIC_APP_URL`: `https://sync-space-indol-one.vercel.app`
+   - `NEXT_PUBLIC_COLLAB_WS_URL`: `wss://syncspace-7s7s.onrender.com`
 6. Click **Deploy**. Vercel will build all 36 routes and output static & dynamic App Router endpoints.
+7. **Live Production Endpoints:**
+   - **Web App (Vercel):** [https://sync-space-indol-one.vercel.app](https://sync-space-indol-one.vercel.app)
+   - **Collab WebSocket (Render):** [wss://syncspace-7s7s.onrender.com](https://syncspace-7s7s.onrender.com)
+   - **Full Stack Mirror (Render):** [https://syncspace-7s7s.onrender.com](https://syncspace-7s7s.onrender.com)
 
 ---
 
