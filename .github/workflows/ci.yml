@@ -1,0 +1,66 @@
+name: SyncSpace Continuous Integration
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate:
+    name: Build, Lint & Test Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: syncspace_user
+          POSTGRES_PASSWORD: syncspace_password
+          POSTGRES_DB: syncspace_db
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: "postgresql://syncspace_user:syncspace_password@localhost:54329/syncspace_db?schema=public"
+      AUTH_SECRET: "ci-test-super-secret-jwt-key-minimum-32-chars-long!"
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      NEXT_PUBLIC_COLLAB_WS_URL: "ws://localhost:3001"
+      COLLAB_PORT: "3001"
+      NODE_ENV: "test"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run Database Migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed Demo Data
+        run: npm run db:seed
+
+      - name: ESLint Code Quality
+        run: npm run lint
+
+      - name: Execute Vitest Unit & Integration Tests
+        run: npm run test
+
+      - name: Production Bundle Build
+        run: npm run build

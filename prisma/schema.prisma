@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum DocumentRole {
+  OWNER
+  EDITOR
+  COMMENTER
+  VIEWER
+}
+
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  avatarUrl     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships   WorkspaceMember[]
+  createdDocs   Document[]          @relation("DocumentCreator")
+  permissions   DocumentPermission[]
+  comments      Comment[]
+  resolvedComments Comment[]        @relation("ResolvedBy")
+  versions      DocumentVersion[]   @relation("VersionCreator")
+  favorites     Favorite[]
+  auditEvents   AuditEvent[]
+  preferences   UserPreference?
+  invitationsSent Invitation[]      @relation("InvitedByUser")
+  shareLinksCreated ShareLink[]     @relation("ShareLinkCreator")
+
+  @@index([email])
+}
+
+model Workspace {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  members     WorkspaceMember[]
+  folders     Folder[]
+  documents   Document[]
+  invitations Invitation[]
+  auditEvents AuditEvent[]
+
+  @@index([slug])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model Folder {
+  id          String     @id @default(uuid())
+  workspaceId String
+  parentId    String?
+  name        String
+  color       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      Folder?    @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[]   @relation("FolderHierarchy")
+  documents   Document[]
+
+  @@index([workspaceId])
+  @@index([parentId])
+}
+
+model Document {
+  id          String    @id @default(uuid())
+  workspaceId String
+  folderId    String?
+  createdById String
+  title       String    @default("Untitled Document")
+  contentJson String?   @db.Text
+  contentHtml String?   @db.Text
+  isArchived  Boolean   @default(false)
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder      Folder?              @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  creator     User                 @relation("DocumentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  permissions DocumentPermission[]
+  updates     DocumentUpdate[]
+  versions    DocumentVersion[]
+  comments    Comment[]
+  favorites   Favorite[]
+  shareLinks  ShareLink[]
+  auditEvents AuditEvent[]
+
+  @@index([workspaceId, isDeleted, isArchived])
+  @@index([createdById])
+  @@index([folderId])
+}
+
+model DocumentPermission {
+  id         String       @id @default(uuid())
+  documentId String
+  userId     String?
+  email      String?
+  role       DocumentRole @default(VIEWER)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([documentId])
+  @@index([userId])
+  @@index([email])
+}
+
+model DocumentUpdate {
+  id           String    @id @default(uuid())
+  documentId   String
+  updateBinary Bytes
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+}
+
+model DocumentVersion {
+  id            String    @id @default(uuid())
+  documentId    String
+  createdById   String
+  versionNumber Int
+  title         String
+  snapshotData  Bytes
+  label         String?
+  createdAt     DateTime  @default(now())
+
+  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  creator       User      @relation("VersionCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([documentId, versionNumber])
+}
+
+model Comment {
+  id          String    @id @default(uuid())
+  documentId  String
+  authorId    String
+  parentId    String?
+  content     String    @db.Text
+  isResolved  Boolean   @default(false)
+  resolvedAt  DateTime?
+  resolvedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent      Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     Comment[] @relation("CommentReplies")
+  resolvedBy  User?     @relation("ResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([documentId, isResolved])
+  @@index([parentId])
+}
+
+model Invitation {
+  id          String        @id @default(uuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole @default(MEMBER)
+  tokenHash   String        @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  invitedById String
+  createdAt   DateTime      @default(now())
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy   User          @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, email])
+  @@index([tokenHash])
+}
+
+model ShareLink {
+  id           String       @id @default(uuid())
+  documentId   String
+  tokenHash    String       @unique
+  role         DocumentRole @default(VIEWER)
+  requiresAuth Boolean      @default(false)
+  expiresAt    DateTime?
+  isRevoked    Boolean      @default(false)
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  creator      User         @relation("ShareLinkCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([documentId])
+}
+
+model Favorite {
+  id         String   @id @default(uuid())
+  userId     String
+  documentId String
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, documentId])
+  @@index([userId])
+}
+
+model AuditEvent {
+  id           String    @id @default(uuid())
+  workspaceId  String?
+  documentId   String?
+  userId       String?
+  action       String
+  metadataJson String?   @db.Text
+  ipAddress    String?
+  createdAt    DateTime  @default(now())
+
+  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document     Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([documentId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model UserPreference {
+  id               String          @id @default(uuid())
+  userId           String          @unique
+  theme            ThemePreference @default(SYSTEM)
+  sidebarCollapsed Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
