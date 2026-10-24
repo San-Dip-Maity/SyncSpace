@@ -75,7 +75,7 @@ export default async function SharedDocumentPage({
     ? { id: user.id, name: user.name, avatarUrl: user.avatarUrl, isGuest: false }
     : {
         id: `guest-${token.slice(0, 8)}`,
-        name: "Guest Reviewer",
+        name: "Anonymous",
         avatarUrl: null,
         isGuest: true,
       };

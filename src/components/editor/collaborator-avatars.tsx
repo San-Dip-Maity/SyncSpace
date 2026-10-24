@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -9,6 +10,7 @@ export interface CollaboratorUser {
   name: string;
   color: string;
   avatarUrl?: string | null;
+  isGuest?: boolean;
 }
 
 interface CollaboratorAvatarsProps {
@@ -26,12 +28,16 @@ export function CollaboratorAvatars({ collaborators }: CollaboratorAvatarsProps)
   return (
     <div className="flex items-center -space-x-1.5 overflow-hidden">
       {displayed.map((c) => {
-        const initials = c.name
-          .split(" ")
-          .map((n) => n[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2);
+        const isAnonymous = Boolean(c.isGuest || !c.name || c.name.toLowerCase().includes("anonymous"));
+        const displayName = isAnonymous ? "Anonymous" : c.name;
+        const initials = isAnonymous
+          ? "AN"
+          : c.name
+              .split(" ")
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase()
+              .slice(0, 2);
 
         return (
           <Tooltip key={c.clientId}>
@@ -41,18 +47,19 @@ export function CollaboratorAvatars({ collaborators }: CollaboratorAvatarsProps)
                 style={{ ["--tw-ring-color" as string]: c.color }}
               >
                 <Avatar className="h-7 w-7 border border-background">
-                  {c.avatarUrl && <AvatarImage src={c.avatarUrl} alt={c.name} />}
+                  {c.avatarUrl && <AvatarImage src={c.avatarUrl} alt={displayName} />}
                   <AvatarFallback
                     style={{ backgroundColor: `${c.color}25`, color: c.color }}
-                    className="text-[10px] font-bold"
+                    className="text-[10px] font-bold flex items-center justify-center"
                   >
-                    {initials}
+                    {isAnonymous ? <User className="h-3 w-3" /> : initials}
                   </AvatarFallback>
                 </Avatar>
               </div>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              <span className="font-semibold">{c.name}</span> (Editing)
+              <span className="font-semibold">{displayName}</span>
+              {isAnonymous ? " (Anonymous)" : " (Editing)"}
             </TooltipContent>
           </Tooltip>
         );

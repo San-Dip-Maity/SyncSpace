@@ -44,6 +44,7 @@ export interface CollaborativeEditorProps {
     id: string;
     name: string;
     avatarUrl?: string | null;
+    isGuest?: boolean;
   };
   shareToken?: string | null;
   collabToken?: string | null;
@@ -63,12 +64,21 @@ export function CollaborativeEditor({
 }: CollaborativeEditorProps) {
   const [ydoc] = React.useState(() => new Y.Doc());
   const [provider, setProvider] = React.useState<WebsocketProvider | null>(null);
-  const userColor = React.useMemo(() => getRandomColor(currentUser.id || currentUser.name), [currentUser]);
+  const userColor = React.useMemo(() => getRandomColor(currentUser.id || currentUser.name), [currentUser.id, currentUser.name]);
 
-  // Save fallback timer
+  // Keep callback refs stable to prevent effect re-triggering loops
+  const onCollaboratorsChangeRef = React.useRef(onCollaboratorsChange);
+  const onStatusChangeRef = React.useRef(onStatusChange);
+
+  React.useEffect(() => {
+    onCollaboratorsChangeRef.current = onCollaboratorsChange;
+    onStatusChangeRef.current = onStatusChange;
+  });
+
+  const prevCollaboratorsJsonRef = React.useRef<string>("");
   const saveTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize Yjs WebSocket Provider
+  // Initialize Yjs WebSocket Provider only when connection parameters change
   React.useEffect(() => {
     let wsProvider: WebsocketProvider | null = null;
     const wsUrl = process.env.NEXT_PUBLIC_COLLAB_WS_URL || "ws://localhost:3001";
@@ -82,30 +92,23 @@ export function CollaborativeEditor({
         params,
       });
 
-      // Set user awareness state
-      wsProvider.awareness.setLocalStateField("user", {
-        name: currentUser.name,
-        color: userColor,
-        avatarUrl: currentUser.avatarUrl,
-      });
-
       wsProvider.on("status", ({ status }: { status: string }) => {
         if (status === "connected") {
-          onStatusChange?.("synced");
+          onStatusChangeRef.current?.("synced");
         } else if (status === "connecting") {
-          onStatusChange?.("syncing");
+          onStatusChangeRef.current?.("syncing");
         } else {
-          onStatusChange?.("offline");
+          onStatusChangeRef.current?.("offline");
         }
       });
 
       wsProvider.on("sync", (isSynced: boolean) => {
         if (isSynced) {
-          onStatusChange?.("synced");
+          onStatusChangeRef.current?.("synced");
         }
       });
 
-      // Track active collaborators in room
+      // Track active collaborators in room (deep-compared to prevent loop)
       const handleAwarenessChange = () => {
         if (!wsProvider) return;
         const states = wsProvider.awareness.getStates();
@@ -118,19 +121,23 @@ export function CollaborativeEditor({
               name: state.user.name,
               color: state.user.color || "#3b82f6",
               avatarUrl: state.user.avatarUrl,
+              isGuest: Boolean(state.user.isGuest),
             });
           }
         });
 
-        onCollaboratorsChange?.(collaborators);
+        const serialized = JSON.stringify(collaborators);
+        if (serialized !== prevCollaboratorsJsonRef.current) {
+          prevCollaboratorsJsonRef.current = serialized;
+          onCollaboratorsChangeRef.current?.(collaborators);
+        }
       };
 
       wsProvider.awareness.on("change", handleAwarenessChange);
-      handleAwarenessChange();
       setProvider(wsProvider);
     } catch (err) {
       console.warn("Realtime WebSocket provider unavailable, operating in local sync mode:", err);
-      onStatusChange?.("offline");
+      onStatusChangeRef.current?.("offline");
     }
 
     return () => {
@@ -139,13 +146,28 @@ export function CollaborativeEditor({
       }
       ydoc.destroy();
     };
-  }, [documentId, ydoc, currentUser, userColor, shareToken, collabToken, onStatusChange, onCollaboratorsChange]);
+  }, [documentId, ydoc, shareToken, collabToken]);
+
+  // Update local awareness field when user details change without tearing down the socket
+  React.useEffect(() => {
+    if (!provider) return;
+
+    const isAnonymous = Boolean(currentUser.isGuest || !currentUser.name || currentUser.name.toLowerCase().includes("anonymous"));
+    const displayName = isAnonymous ? "Anonymous" : currentUser.name;
+
+    provider.awareness.setLocalStateField("user", {
+      name: displayName,
+      color: userColor,
+      avatarUrl: currentUser.avatarUrl,
+      isGuest: isAnonymous,
+    });
+  }, [provider, currentUser.name, currentUser.avatarUrl, currentUser.isGuest, userColor]);
 
   // Autosave to REST endpoint as fallback and for search/preview hydration
   const handleContentUpdate = React.useCallback(
     (html: string) => {
       if (readOnly) return;
-      onStatusChange?.("syncing");
+      onStatusChangeRef.current?.("syncing");
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -160,17 +182,20 @@ export function CollaborativeEditor({
           });
 
           if (res.ok) {
-            onStatusChange?.("saved");
+            onStatusChangeRef.current?.("saved");
           } else {
-            onStatusChange?.("offline");
+            onStatusChangeRef.current?.("offline");
           }
         } catch {
-          onStatusChange?.("offline");
+          onStatusChangeRef.current?.("offline");
         }
       }, 1500);
     },
-    [documentId, readOnly, shareToken, onStatusChange]
+    [documentId, readOnly, shareToken]
   );
+
+  const isAnonymous = Boolean(currentUser.isGuest || !currentUser.name || currentUser.name.toLowerCase().includes("anonymous"));
+  const cursorName = isAnonymous ? "Anonymous" : currentUser.name;
 
   // Initialize Tiptap Editor
   const editor = useEditor(
@@ -205,7 +230,7 @@ export function CollaborativeEditor({
               CollaborationCursor.configure({
                 provider,
                 user: {
-                  name: currentUser.name,
+                  name: cursorName,
                   color: userColor,
                 },
               }),
@@ -216,7 +241,7 @@ export function CollaborativeEditor({
         handleContentUpdate(e.getHTML());
       },
     },
-    [provider, readOnly]
+    [provider, readOnly, cursorName, userColor]
   );
 
   return (

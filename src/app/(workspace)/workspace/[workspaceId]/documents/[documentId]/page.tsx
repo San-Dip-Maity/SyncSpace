@@ -57,6 +57,9 @@ export default function DocumentEditorPage() {
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [syncStatus, setSyncStatus] = React.useState<"synced" | "syncing" | "saved" | "offline">("syncing");
   const [collaborators, setCollaborators] = React.useState<CollaboratorUser[]>([]);
+  const handleCollaboratorsChange = React.useCallback((collabs: CollaboratorUser[]) => {
+    setCollaborators(collabs);
+  }, []);
   const [isCommentsOpen, setIsCommentsOpen] = React.useState(false);
   const [isVersionsOpen, setIsVersionsOpen] = React.useState(false);
   const [isShareOpen, setIsShareOpen] = React.useState(false);
@@ -343,7 +346,7 @@ export default function DocumentEditorPage() {
             currentUser={currentUser}
             collabToken={collabToken}
             onStatusChange={setSyncStatus}
-            onCollaboratorsChange={setCollaborators}
+            onCollaboratorsChange={handleCollaboratorsChange}
           />
         </div>
 

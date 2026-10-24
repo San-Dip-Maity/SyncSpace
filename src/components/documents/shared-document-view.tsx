@@ -68,6 +68,10 @@ export function SharedDocumentView({
     fetchCommentsCount();
   }, [fetchCommentsCount]);
 
+  const handleCollaboratorsChange = React.useCallback((collabs: CollaboratorUser[]) => {
+    setCollaborators(collabs);
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       {/* Header Bar */}
@@ -176,15 +180,11 @@ export function SharedDocumentView({
               documentId={document.id}
               initialContentHtml={document.contentHtml || "<p></p>"}
               readOnly={isReadOnly}
-              currentUser={{
-                id: currentUser.id,
-                name: currentUser.name,
-                avatarUrl: currentUser.avatarUrl,
-              }}
+              currentUser={currentUser}
               shareToken={shareToken}
               collabToken={collabToken}
               onStatusChange={setSyncStatus}
-              onCollaboratorsChange={setCollaborators}
+              onCollaboratorsChange={handleCollaboratorsChange}
             />
           </div>
         </main>
